@@ -261,13 +261,13 @@ async function startBot() {
             version,
             auth: state,
             logger: pino({ level: 'silent' }),
-            browser: ['WhatsApp Bot', 'Chrome', '1.0.0'],
-            connectTimeoutMs: 60000,
-            defaultQueryTimeoutMs: 0,
-            keepAliveIntervalMs: 10000,
-            generateHighQualityLinkPreview: true,
+            browser: ['Food Order Bot', 'Chrome', '1.0.0'],
+            connectTimeoutMs: 30000,
+            defaultQueryTimeoutMs: 30000,
+            keepAliveIntervalMs: 25000,
+            generateHighQualityLinkPreview: false,
             syncFullHistory: false,
-            markOnlineOnConnect: true
+            markOnlineOnConnect: false
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -276,13 +276,17 @@ async function startBot() {
             const { connection, lastDisconnect, qr } = update;
             
             if (qr) {
-                console.log('\n📱 QR CODE RECEIVED! Scan with WhatsApp:');
-                console.log('Go to WhatsApp > Settings > Linked Devices > Link a Device');
-                console.log('\n' + '='.repeat(60));
+                console.log('\n\n' + '⭐'.repeat(20));
+                console.log('📱 QR CODE READY! SCAN NOW!');
+                console.log('1. Open WhatsApp on your phone');
+                console.log('2. Go to Settings > Linked Devices');
+                console.log('3. Tap "Link a Device"');
+                console.log('4. Scan the QR code below:');
+                console.log('\n' + '='.repeat(50));
                 qrcode.generate(qr, { small: true });
-                console.log('='.repeat(60));
-                console.log('⏰ QR Code expires in 20 seconds. Scan quickly!');
-                console.log('🔄 Waiting for QR scan...');
+                console.log('='.repeat(50));
+                console.log('⏰ QR expires in 20 seconds - SCAN QUICKLY!');
+                console.log('⭐'.repeat(20) + '\n');
             }
             
             if (connection === 'close') {
@@ -292,39 +296,21 @@ async function startBot() {
                 
                 const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
                 console.log('Connection closed due to:', errorMessage);
-                console.log('Should reconnect:', shouldReconnect);
                 
-                // Handle stream conflict specifically
-                if (errorMessage.includes('conflict') || errorMessage.includes('Stream Errored')) {
-                    console.log('⚠️  STREAM CONFLICT DETECTED!');
-                    console.log('📱 This means you have an existing WhatsApp Web session.');
-                    console.log('🔧 SOLUTION: Go to WhatsApp > Settings > Linked Devices');
-                    console.log('🚪 Log out from ALL existing sessions, then restart this service.');
-                    console.log('💡 After logout, a new QR code will appear for scanning.');
-                    
-                    if (connectionAttempts < MAX_RETRIES) {
-                        connectionAttempts++;
-                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} in 15 seconds...`);
-                        setTimeout(() => {
-                            startBot();
-                        }, 15000);
-                    } else {
-                        console.log('🛑 Max retries reached.');
-                        console.log('🔄 Please unlink existing WhatsApp sessions and restart the service.');
-                    }
-                } else if (shouldReconnect && connectionAttempts < MAX_RETRIES) {
+                if (shouldReconnect && connectionAttempts < MAX_RETRIES) {
                     connectionAttempts++;
-                    console.log(`Reconnection attempt ${connectionAttempts}/${MAX_RETRIES}`);
+                    console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Will generate new QR code`);
                     setTimeout(() => {
                         startBot();
-                    }, 5000 * connectionAttempts);
+                    }, 5000);
                 } else {
-                    console.log('Max retries reached or logged out. Stopping bot.');
+                    console.log('🛑 Max retries reached. Service will keep running for health checks.');
+                    console.log('💡 Restart the service to try connecting again.');
                 }
             } else if (connection === 'open') {
                 isConnecting = false;
                 connectionAttempts = 0;
-                console.log('✅ Connection opened successfully!');
+                console.log('✅ WhatsApp connected successfully!');
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
             }
