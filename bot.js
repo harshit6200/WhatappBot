@@ -1,7 +1,7 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const qrcode = require('qrcode-terminal');
-const { Boom } = require('@hapi/boom');
+import { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import pino from 'pino';
+import qrcode from 'qrcode-terminal';
+import { Boom } from '@hapi/boom';
 
 // --- BOT CONFIGURATION ---
 const SHOP_NAME = "Sit n' Eat";
@@ -152,6 +152,9 @@ const menu = {
     ]
 };
 
+// Create socket instance and handle connection
+let sock; // Declare it here to be used in the functions
+
 const userSessions = {}; // To store user state and cart
 
 // --- HELPER FUNCTIONS ---
@@ -182,7 +185,7 @@ async function startBot() {
     const { version, isLatest } = await fetchLatestBaileysVersion();
     console.log(`Using Baileys version ${version.join('.')}, isLatest: ${isLatest}`);
 
-    const sock = makeWASocket({
+    sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' })
@@ -190,19 +193,21 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            console.log("QR code received, please scan:");
-            qrcode.generate(qr, { small: true });
-        }
+    const maxRetries = 5;
+    let retryCount = 0;
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom) ?
-                lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut :
-                true;
+            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? 
+                lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
             console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
-            if (shouldReconnect) {
-                startBot();
+
+            if (retryCount < maxRetries && shouldReconnect) {
+                retryCount++;
+                setTimeout(() => {
+                    startBot(); // Restart bot after a delay
+                }, 5000); // Delay of 5 seconds before retrying
             }
         } else if (connection === 'open') {
             console.log('Connection opened!');
