@@ -1,15 +1,7 @@
-const {
-    default: makeWASocket,
-    useMultiFileAuthState,
-    DisconnectReason,
-    fetchLatestBaileysVersion,
-    proto
-} = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
-const {
-    Boom
-} = require('@hapi/boom');
+const { Boom } = require('@hapi/boom');
 
 // --- BOT CONFIGURATION ---
 const SHOP_NAME = "Sit n' Eat";
@@ -163,17 +155,13 @@ const menu = {
 const userSessions = {}; // To store user state and cart
 
 // --- HELPER FUNCTIONS ---
-
 function generateOrderId() {
     return `MFC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
 function formatCart(cart) {
     if (!cart || cart.length === 0) {
-        return {
-            cartText: "Your cart is empty.",
-            total: 0
-        };
+        return { cartText: "Your cart is empty.", total: 0 };
     }
     let total = 0;
     const cartItems = cart.map((item, index) => {
@@ -188,39 +176,25 @@ function formatCart(cart) {
     };
 }
 
-
+// --- BOT LOGIC ---
 async function startBot() {
-    const {
-        state,
-        saveCreds
-    } = await useMultiFileAuthState('auth_info_baileys');
-    const {
-        version,
-        isLatest
-    } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { version, isLatest } = await fetchLatestBaileysVersion();
     console.log(`Using Baileys version ${version.join('.')}, isLatest: ${isLatest}`);
 
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({
-            level: 'silent'
-        }),
+        logger: pino({ level: 'silent' })
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const {
-            connection,
-            lastDisconnect,
-            qr
-        } = update;
+        const { connection, lastDisconnect, qr } = update;
         if (qr) {
             console.log("QR code received, please scan:");
-            qrcode.generate(qr, {
-                small: true
-            });
+            qrcode.generate(qr, { small: true });
         }
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) ?
@@ -242,12 +216,9 @@ async function startBot() {
         const jid = msg.key.remoteJid;
         const senderName = msg.pushName || "User";
 
+        // Initialize user session if not present
         if (!userSessions[jid]) {
-            userSessions[jid] = {
-                state: 'main_menu',
-                cart: [],
-                context: {}
-            };
+            userSessions[jid] = { state: 'main_menu', cart: [], context: {} };
         }
         const session = userSessions[jid];
         const messageContent = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
@@ -266,10 +237,7 @@ async function startBot() {
             // --- STATE: SELECTING CATEGORY ---
             else if (session.state === 'selecting_category') {
                 if (messageContent === 'cart') {
-                    // Handle cart viewing directly from category selection
-                    const {
-                        cartText
-                    } = formatCart(session.cart);
+                    const { cartText } = formatCart(session.cart);
                     await sock.sendMessage(jid, {
                         text: `${cartText}\n\nType *'Pay'* to proceed or *'menu'* to continue shopping.`
                     });
@@ -303,9 +271,7 @@ async function startBot() {
                         text: "Going back..."
                     });
                     // Trigger the main menu display again
-                    const menuMessage = {
-                        conversation: "menu"
-                    };
+                    const menuMessage = { conversation: "menu" };
                     msg.message = menuMessage;
                     await sock.ev.emit('messages.upsert', {
                         messages: [msg],
@@ -313,6 +279,7 @@ async function startBot() {
                     });
                     return;
                 }
+
                 const itemIndex = parseInt(messageContent) - 1;
                 const items = menu[session.context.category];
                 if (!isNaN(itemIndex) && itemIndex >= 0 && itemIndex < items.length) {
@@ -337,14 +304,10 @@ async function startBot() {
                     if (existingItem) {
                         existingItem.quantity += quantity;
                     } else {
-                        session.cart.push({ ...selectedItem,
-                            quantity
-                        });
+                        session.cart.push({ ...selectedItem, quantity });
                     }
                     session.state = 'in_cart';
-                    const {
-                        cartText
-                    } = formatCart(session.cart);
+                    const { cartText } = formatCart(session.cart);
                     await sock.sendMessage(jid, {
                         text: `Added *${quantity}x ${selectedItem.name}* to your cart. ✅\n\n${cartText}\n\nType *'Pay'* to place your order, or *'menu'* to add more items.`
                     });
@@ -365,9 +328,7 @@ async function startBot() {
                     return;
                 }
                 session.state = 'awaiting_payment_method';
-                const {
-                    cartText
-                } = formatCart(session.cart);
+                const { cartText } = formatCart(session.cart);
                 await sock.sendMessage(jid, {
                     text: `${EMOJIS.order} *Order Summary*\n\n${cartText}\n\nPlease choose a payment method:\n1. ${EMOJIS.money} Pay with UPI\n2. ${EMOJIS.money} Cash on Delivery (COD)\n\nReply with *1* or *2*.`
                 });
@@ -375,14 +336,10 @@ async function startBot() {
                 const choice = messageContent;
                 if (choice === '1') { // UPI
                     session.state = 'awaiting_payment_proof';
-                    const {
-                        total
-                    } = formatCart(session.cart);
+                    const { total } = formatCart(session.cart);
                     const upiLink = `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(SHOP_NAME)}&am=${total}&cu=${CURRENCY}&tn=OrderFrom${senderName}`;
                     const upiMessage = `Please complete your payment of *${CURRENCY} ${total}*.\n\nTo pay, click the link below or copy our UPI ID.\n\n${upiLink}\n\n*Our UPI ID:* \`${UPI_ID}\`\n\nAfter payment, please send a screenshot of the confirmation.`;
-                    await sock.sendMessage(jid, {
-                        text: upiMessage
-                    });
+                    await sock.sendMessage(jid, { text: upiMessage });
                 } else if (choice === '2') { // COD
                     session.state = 'awaiting_location';
                     await sock.sendMessage(jid, {
@@ -398,14 +355,10 @@ async function startBot() {
             // --- HANDLE LOCATION AND PAYMENT PROOF ---
             else if (msg.message.locationMessage && session.state === 'awaiting_location') {
                 const orderId = generateOrderId();
-                const {
-                    cartText
-                } = formatCart(session.cart);
+                const { cartText } = formatCart(session.cart);
                 const paymentMethod = session.state === 'awaiting_location' ? 'Cash on Delivery' : 'UPI (Verified)';
                 const confirmationMessage = `*${EMOJIS.confirm} Order Confirmed!*\n\nThank you, ${senderName}!\n\n*Order ID:* ${orderId}\n\n${cartText}\n\n*Payment Method:* ${paymentMethod}\n\nWe will deliver to your shared location shortly.`;
-                await sock.sendMessage(jid, {
-                    text: confirmationMessage
-                });
+                await sock.sendMessage(jid, { text: confirmationMessage });
                 delete userSessions[jid];
             } else if (msg.message.imageMessage && session.state === 'awaiting_payment_proof') {
                 session.state = 'awaiting_location';

@@ -10,8 +10,8 @@
   "license": "ISC",
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.5.0",
-    "pino": "^8.16.2",
+    "@whiskeysockets/baileys": "^7.0.0-rc.6",
+    "pino": "^10.1.0",
     "pino-pretty": "^10.2.3",
     "qrcode-terminal": "^0.12.0"
   }
