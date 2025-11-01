@@ -2,11 +2,14 @@ import { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBaile
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { Boom } from '@hapi/boom';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
 
 // --- BOT CONFIGURATION ---
-const SHOP_NAME = "Sit n' Eat";
-const UPI_ID = "6200122998@ptyes";
-const CURRENCY = "INR";
+const SHOP_NAME = process.env.SHOP_NAME || "Sit n' Eat";
+const UPI_ID = process.env.UPI_ID || "6200122998@ptyes";
+const CURRENCY = process.env.CURRENCY || "INR";
 const EMOJIS = {
     welcome: '👋',
     menu: '🍕',
@@ -180,39 +183,154 @@ function formatCart(cart) {
 }
 
 // --- BOT LOGIC ---
-async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`Using Baileys version ${version.join('.')}, isLatest: ${isLatest}`);
+let isConnecting = false;
+let connectionAttempts = 0;
+const MAX_RETRIES = 3;
+const LOCK_FILE = path.join(process.cwd(), 'bot.lock');
 
-    sock = makeWASocket({
-        version,
-        auth: state,
-        logger: pino({ level: 'silent' })
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    const maxRetries = 5;
-    let retryCount = 0;
-
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? 
-                lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
-
-            if (retryCount < maxRetries && shouldReconnect) {
-                retryCount++;
-                setTimeout(() => {
-                    startBot(); // Restart bot after a delay
-                }, 5000); // Delay of 5 seconds before retrying
-            }
-        } else if (connection === 'open') {
-            console.log('Connection opened!');
+// Check for existing instance
+function checkLock() {
+    if (fs.existsSync(LOCK_FILE)) {
+        try {
+            const pid = fs.readFileSync(LOCK_FILE, 'utf8');
+            // Check if process is still running
+            process.kill(pid, 0);
+            console.log('⚠️  Another bot instance is already running (PID:', pid, ')');
+            console.log('🛠️  Please stop the other instance first or wait for it to finish.');
+            process.exit(1);
+        } catch (e) {
+            // Process not running, remove stale lock
+            fs.unlinkSync(LOCK_FILE);
         }
-    });
+    }
+}
+
+// Create lock file
+function createLock() {
+    fs.writeFileSync(LOCK_FILE, process.pid.toString());
+}
+
+// Remove lock file
+function removeLock() {
+    try {
+        if (fs.existsSync(LOCK_FILE)) {
+            fs.unlinkSync(LOCK_FILE);
+        }
+    } catch (e) {
+        // Ignore errors
+    }
+}
+
+// Handle process termination
+process.on('SIGINT', () => {
+    console.log('\n🛡️  Shutting down bot...');
+    removeLock();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛡️  Shutting down bot...');
+    removeLock();
+    process.exit(0);
+});
+
+process.on('exit', () => {
+    removeLock();
+});
+
+async function startBot() {
+    if (isConnecting) {
+        console.log('Already attempting to connect, skipping...');
+        return;
+    }
+    
+    // Check for lock only on first attempt
+    if (connectionAttempts === 0) {
+        checkLock();
+        createLock();
+    }
+    
+    isConnecting = true;
+    
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+        const { version, isLatest } = await fetchLatestBaileysVersion();
+        console.log(`Using Baileys version ${version.join('.')}, isLatest: ${isLatest}`);
+
+        sock = makeWASocket({
+            version,
+            auth: state,
+            logger: pino({ level: 'silent' }),
+            browser: ['WhatsApp Bot', 'Chrome', '1.0.0'],
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 0,
+            keepAliveIntervalMs: 10000,
+            generateHighQualityLinkPreview: true,
+            syncFullHistory: false,
+            markOnlineOnConnect: true
+        });
+
+        sock.ev.on('creds.update', saveCreds);
+
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            
+            if (qr) {
+                console.log('\n📱 QR Code received! Scan it with WhatsApp to connect:');
+                console.log('\n' + '='.repeat(50));
+                qrcode.generate(qr, { small: true });
+                console.log('='.repeat(50));
+                console.log('⏰ QR Code expires in 20 seconds. Scan quickly!');
+            }
+            
+            if (connection === 'close') {
+                isConnecting = false;
+                const shouldReconnect = lastDisconnect?.error instanceof Boom ? 
+                    lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
+                
+                const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
+                console.log('Connection closed due to:', errorMessage);
+                console.log('Should reconnect:', shouldReconnect);
+                
+                // Handle stream conflict specifically
+                if (errorMessage.includes('conflict') || errorMessage.includes('Stream Errored')) {
+                    console.log('⚠️  Stream conflict detected. This usually means another instance is running.');
+                    console.log('🛠️  Waiting longer before retry to avoid conflicts...');
+                    
+                    if (connectionAttempts < MAX_RETRIES) {
+                        connectionAttempts++;
+                        console.log(`Reconnection attempt ${connectionAttempts}/${MAX_RETRIES}`);
+                        setTimeout(() => {
+                            startBot();
+                        }, 15000 * connectionAttempts); // Longer delay for conflicts
+                    } else {
+                        console.log('🛑 Max retries reached. Please check if another instance is running.');
+                    }
+                } else if (shouldReconnect && connectionAttempts < MAX_RETRIES) {
+                    connectionAttempts++;
+                    console.log(`Reconnection attempt ${connectionAttempts}/${MAX_RETRIES}`);
+                    setTimeout(() => {
+                        startBot();
+                    }, 5000 * connectionAttempts);
+                } else {
+                    console.log('Max retries reached or logged out. Stopping bot.');
+                }
+            } else if (connection === 'open') {
+                isConnecting = false;
+                connectionAttempts = 0;
+                console.log('✅ Connection opened successfully!');
+            } else if (connection === 'connecting') {
+                console.log('🔄 Connecting to WhatsApp...');
+            }
+        });
+    } catch (error) {
+        isConnecting = false;
+        console.error('Error starting bot:', error);
+        if (connectionAttempts < MAX_RETRIES) {
+            connectionAttempts++;
+            setTimeout(() => startBot(), 10000);
+        }
+    }
 
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
@@ -387,6 +505,27 @@ async function startBot() {
         }
     });
 }
+
+// Create a simple HTTP server for health checks
+const server = http.createServer((req, res) => {
+    if (req.url === '/health' || req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+            status: 'ok', 
+            message: 'WhatsApp Bot is running',
+            timestamp: new Date().toISOString(),
+            connected: sock ? 'yes' : 'no'
+        }));
+    } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Health check server running on port ${PORT}`);
+});
 
 // Start the bot
 startBot().catch(err => console.log(err));

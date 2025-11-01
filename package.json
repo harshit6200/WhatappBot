@@ -2,9 +2,14 @@
   "name": "whatsapp-order-bot",
   "version": "1.0.0",
   "description": "A WhatsApp bot for food ordering using Baileys.",
-  "main": "bot.js",
+  "main": "bot.mjs",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.mjs",
+    "dev": "node bot.mjs",
+    "clear-auth": "node clear-auth.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "author": "Gemini",
   "license": "ISC",
@@ -15,5 +20,5 @@
     "pino-pretty": "^10.2.3",
     "qrcode-terminal": "^0.12.0"
   },
-   "type": "module" 
+  "type": "module"
 }
