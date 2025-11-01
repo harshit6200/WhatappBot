@@ -295,16 +295,16 @@ async function startBot() {
         
         // Generate QR immediately if no auth data exists
         if (!state.creds?.registered) {
-            console.log('🔑 No auth data found, will need QR scan');
-            setTimeout(() => {
-                if (isConnecting) {
-                    console.log('\n\n⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐');
-                    console.log('🚨 QR CODE SHOULD APPEAR BELOW 🚨');
-                    console.log('If no QR appears, there may be a network issue');
-                    console.log('⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐\n');
-                }
-            }, 5000);
+            console.log('🔑 No valid auth data found, will need QR scan');
         }
+        
+        // Force QR display after a short delay
+        setTimeout(() => {
+            if (isConnecting) {
+                console.log('\n⭐⭐⭐ WAITING FOR QR CODE ⭐⭐⭐');
+                console.log('If no QR appears in 10 seconds, check for connection issues');
+            }
+        }, 8000);
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
@@ -322,14 +322,29 @@ async function startBot() {
                 const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : 'No status';
                 console.log('Connection closed due to:', errorMessage);
                 console.log('Status code:', statusCode);
-                console.log('Error details:', JSON.stringify(lastDisconnect?.error, null, 2));
+                
+                // Handle 401 Unauthorized - corrupted auth data
+                if (statusCode === 401) {
+                    console.log('🚨 401 UNAUTHORIZED - Auth data is corrupted!');
+                    console.log('🧹 Clearing corrupted auth data...');
+                    try {
+                        if (fs.existsSync('auth_info_baileys')) {
+                            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                            console.log('✅ Auth data cleared successfully');
+                        }
+                    } catch (e) {
+                        console.log('⚠️ Could not clear auth data:', e.message);
+                    }
+                    console.log('🔄 Will generate fresh QR code on next attempt');
+                }
                 
                 if (connectionAttempts < MAX_RETRIES) {
                     connectionAttempts++;
-                    console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Will generate new QR code`);
+                    const delay = statusCode === 401 ? 5000 : 3000; // Longer delay for auth issues
+                    console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} in ${delay/1000}s`);
                     setTimeout(() => {
                         startBot();
-                    }, 3000);
+                    }, delay);
                 } else {
                     console.log('🛑 Max retries reached. Resetting and trying again...');
                     connectionAttempts = 0;
