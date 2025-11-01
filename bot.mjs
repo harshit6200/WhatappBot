@@ -208,55 +208,7 @@ let connectionAttempts = 0;
 const MAX_RETRIES = 5;
 const LOCK_FILE = path.join(process.cwd(), 'bot.lock');
 
-// Check for existing instance
-function checkLock() {
-    if (fs.existsSync(LOCK_FILE)) {
-        try {
-            const pid = fs.readFileSync(LOCK_FILE, 'utf8');
-            // Check if process is still running
-            process.kill(pid, 0);
-            console.log('⚠️  Another bot instance is already running (PID:', pid, ')');
-            console.log('🛠️  Please stop the other instance first or wait for it to finish.');
-            process.exit(1);
-        } catch (e) {
-            // Process not running, remove stale lock
-            fs.unlinkSync(LOCK_FILE);
-        }
-    }
-}
-
-// Create lock file
-function createLock() {
-    fs.writeFileSync(LOCK_FILE, process.pid.toString());
-}
-
-// Remove lock file
-function removeLock() {
-    try {
-        if (fs.existsSync(LOCK_FILE)) {
-            fs.unlinkSync(LOCK_FILE);
-        }
-    } catch (e) {
-        // Ignore errors
-    }
-}
-
-// Handle process termination
-process.on('SIGINT', () => {
-    console.log('\n🛡️  Shutting down bot...');
-    removeLock();
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('\n🛡️  Shutting down bot...');
-    removeLock();
-    process.exit(0);
-});
-
-process.on('exit', () => {
-    removeLock();
-});
+// Simplified for cloud deployment - no file locks needed
 
 async function startBot() {
     if (isConnecting) {
@@ -264,15 +216,7 @@ async function startBot() {
         return;
     }
     
-    // Check for lock only on first attempt
-    if (connectionAttempts === 0) {
-        try {
-            checkLock();
-            createLock();
-        } catch (e) {
-            console.log('Lock check skipped in cloud environment');
-        }
-    }
+    // Skip lock checks in cloud environment
     
     isConnecting = true;
     
@@ -286,25 +230,23 @@ async function startBot() {
             auth: state,
             logger: pino({ level: 'silent' }),
             browser: ['Food Bot', 'Chrome', '1.0.0'],
-            printQRInTerminal: false
+            printQRInTerminal: true,  // Enable built-in QR
+            qrTimeout: 30000
         });
         
         console.log('✅ Socket created, waiting for events...');
 
         sock.ev.on('creds.update', saveCreds);
         
-        // Generate QR immediately if no auth data exists
+        // Check auth status
         if (!state.creds?.registered) {
-            console.log('🔑 No valid auth data found, will need QR scan');
+            console.log('🔑 No valid auth data - QR code will be generated');
+            console.log('📱 Instructions:');
+            console.log('1. Open WhatsApp on your phone');
+            console.log('2. Go to Settings > Linked Devices');
+            console.log('3. Tap "Link a Device"');
+            console.log('4. Scan the QR code when it appears below');
         }
-        
-        // Force QR display after a short delay
-        setTimeout(() => {
-            if (isConnecting) {
-                console.log('\n⭐⭐⭐ WAITING FOR QR CODE ⭐⭐⭐');
-                console.log('If no QR appears in 10 seconds, check for connection issues');
-            }
-        }, 8000);
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
@@ -323,34 +265,30 @@ async function startBot() {
                 console.log('Connection closed due to:', errorMessage);
                 console.log('Status code:', statusCode);
                 
-                // Handle 401 Unauthorized - corrupted auth data
+                // Handle 401 Unauthorized - clear auth and force QR
                 if (statusCode === 401) {
-                    console.log('🚨 401 UNAUTHORIZED - Auth data is corrupted!');
-                    console.log('🧹 Clearing corrupted auth data...');
+                    console.log('🚨 401 UNAUTHORIZED - Need fresh authentication');
+                    console.log('🧹 Clearing auth data for fresh start...');
                     try {
                         if (fs.existsSync('auth_info_baileys')) {
                             fs.rmSync('auth_info_baileys', { recursive: true, force: true });
-                            console.log('✅ Auth data cleared successfully');
                         }
                     } catch (e) {
-                        console.log('⚠️ Could not clear auth data:', e.message);
+                        // Ignore cleanup errors
                     }
-                    console.log('🔄 Will generate fresh QR code on next attempt');
                 }
                 
-                if (connectionAttempts < MAX_RETRIES) {
-                    connectionAttempts++;
-                    const delay = statusCode === 401 ? 5000 : 3000; // Longer delay for auth issues
-                    console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} in ${delay/1000}s`);
+                // Always retry with fresh auth after 401
+                if (statusCode === 401 || connectionAttempts < MAX_RETRIES) {
+                    if (statusCode !== 401) connectionAttempts++;
+                    console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Fresh QR code coming`);
                     setTimeout(() => {
                         startBot();
-                    }, delay);
+                    }, 3000);
                 } else {
-                    console.log('🛑 Max retries reached. Resetting and trying again...');
+                    console.log('🛑 Resetting attempts...');
                     connectionAttempts = 0;
-                    setTimeout(() => {
-                        startBot();
-                    }, 10000);
+                    setTimeout(() => startBot(), 10000);
                 }
             } else if (connection === 'open') {
                 isConnecting = false;
