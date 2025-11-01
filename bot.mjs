@@ -185,7 +185,7 @@ function formatCart(cart) {
 // --- BOT LOGIC ---
 let isConnecting = false;
 let connectionAttempts = 0;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 const LOCK_FILE = path.join(process.cwd(), 'bot.lock');
 
 // Check for existing instance
@@ -246,8 +246,12 @@ async function startBot() {
     
     // Check for lock only on first attempt
     if (connectionAttempts === 0) {
-        checkLock();
-        createLock();
+        try {
+            checkLock();
+            createLock();
+        } catch (e) {
+            console.log('Lock check skipped in cloud environment');
+        }
     }
     
     isConnecting = true;
@@ -258,19 +262,20 @@ async function startBot() {
         console.log(`Using Baileys version ${version.join('.')}, isLatest: ${isLatest}`);
 
         sock = makeWASocket({
-            version,
             auth: state,
             logger: pino({ level: 'silent' }),
-            browser: ['Food Order Bot', 'Chrome', '1.0.0'],
-            connectTimeoutMs: 30000,
-            defaultQueryTimeoutMs: 30000,
-            keepAliveIntervalMs: 25000,
-            generateHighQualityLinkPreview: false,
-            syncFullHistory: false,
-            markOnlineOnConnect: false
+            browser: ['Food Bot', 'Chrome', '1.0.0']
         });
 
         sock.ev.on('creds.update', saveCreds);
+        
+        // Add a timeout to force QR generation if connection hangs
+        const qrTimeout = setTimeout(() => {
+            if (isConnecting) {
+                console.log('🔄 Connection taking too long, forcing QR generation...');
+                sock.ev.emit('connection.update', { qr: 'timeout-fallback' });
+            }
+        }, 10000);
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
@@ -297,19 +302,23 @@ async function startBot() {
                 const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
                 console.log('Connection closed due to:', errorMessage);
                 
-                if (shouldReconnect && connectionAttempts < MAX_RETRIES) {
+                if (connectionAttempts < MAX_RETRIES) {
                     connectionAttempts++;
                     console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Will generate new QR code`);
                     setTimeout(() => {
                         startBot();
-                    }, 5000);
+                    }, 3000);
                 } else {
-                    console.log('🛑 Max retries reached. Service will keep running for health checks.');
-                    console.log('💡 Restart the service to try connecting again.');
+                    console.log('🛑 Max retries reached. Resetting and trying again...');
+                    connectionAttempts = 0;
+                    setTimeout(() => {
+                        startBot();
+                    }, 10000);
                 }
             } else if (connection === 'open') {
                 isConnecting = false;
                 connectionAttempts = 0;
+                clearTimeout(qrTimeout);
                 console.log('✅ WhatsApp connected successfully!');
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
