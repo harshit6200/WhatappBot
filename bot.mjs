@@ -276,11 +276,13 @@ async function startBot() {
             const { connection, lastDisconnect, qr } = update;
             
             if (qr) {
-                console.log('\n📱 QR Code received! Scan it with WhatsApp to connect:');
-                console.log('\n' + '='.repeat(50));
+                console.log('\n📱 QR CODE RECEIVED! Scan with WhatsApp:');
+                console.log('Go to WhatsApp > Settings > Linked Devices > Link a Device');
+                console.log('\n' + '='.repeat(60));
                 qrcode.generate(qr, { small: true });
-                console.log('='.repeat(50));
+                console.log('='.repeat(60));
                 console.log('⏰ QR Code expires in 20 seconds. Scan quickly!');
+                console.log('🔄 Waiting for QR scan...');
             }
             
             if (connection === 'close') {
@@ -294,17 +296,17 @@ async function startBot() {
                 
                 // Handle stream conflict specifically
                 if (errorMessage.includes('conflict') || errorMessage.includes('Stream Errored')) {
-                    console.log('⚠️  Stream conflict detected. This usually means another instance is running.');
-                    console.log('🛠️  Waiting longer before retry to avoid conflicts...');
+                    console.log('⚠️  Stream conflict - likely no QR scan or multiple sessions.');
+                    console.log('💡 Make sure to scan the QR code when it appears!');
                     
                     if (connectionAttempts < MAX_RETRIES) {
                         connectionAttempts++;
-                        console.log(`Reconnection attempt ${connectionAttempts}/${MAX_RETRIES}`);
+                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Will show new QR code`);
                         setTimeout(() => {
                             startBot();
-                        }, 15000 * connectionAttempts); // Longer delay for conflicts
+                        }, 10000); // Shorter delay to get new QR faster
                     } else {
-                        console.log('🛑 Max retries reached. Please check if another instance is running.');
+                        console.log('🛑 Max retries reached. Please restart the service.');
                     }
                 } else if (shouldReconnect && connectionAttempts < MAX_RETRIES) {
                     connectionAttempts++;
