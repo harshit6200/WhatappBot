@@ -6,6 +6,26 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 
+// Alternative QR display function
+function displayQR(qrData) {
+    console.log('\n' + '█'.repeat(60));
+    console.log('🔥 WHATSAPP QR CODE - SCAN IMMEDIATELY! 🔥');
+    console.log('█'.repeat(60));
+    
+    try {
+        // Try standard QR generation
+        qrcode.generate(qrData, { small: false });
+    } catch (e) {
+        console.log('❌ QR generation failed, showing data:');
+        console.log('QR Data:', qrData);
+    }
+    
+    console.log('█'.repeat(60));
+    console.log('⏰ Scan within 20 seconds!');
+    console.log('📱 WhatsApp > Settings > Linked Devices > Link Device');
+    console.log('█'.repeat(60) + '\n');
+}
+
 // --- BOT CONFIGURATION ---
 const SHOP_NAME = process.env.SHOP_NAME || "Sit n' Eat";
 const UPI_ID = process.env.UPI_ID || "6200122998@ptyes";
@@ -261,37 +281,36 @@ async function startBot() {
         const { version, isLatest } = await fetchLatestBaileysVersion();
         console.log(`Using Baileys version ${version.join('.')}, isLatest: ${isLatest}`);
 
+        console.log('🔧 Creating WhatsApp socket...');
         sock = makeWASocket({
             auth: state,
             logger: pino({ level: 'silent' }),
-            browser: ['Food Bot', 'Chrome', '1.0.0']
+            browser: ['Food Bot', 'Chrome', '1.0.0'],
+            printQRInTerminal: false
         });
+        
+        console.log('✅ Socket created, waiting for events...');
 
         sock.ev.on('creds.update', saveCreds);
         
-        // Add a timeout to force QR generation if connection hangs
-        const qrTimeout = setTimeout(() => {
-            if (isConnecting) {
-                console.log('🔄 Connection taking too long, forcing QR generation...');
-                sock.ev.emit('connection.update', { qr: 'timeout-fallback' });
-            }
-        }, 10000);
+        // Generate QR immediately if no auth data exists
+        if (!state.creds?.registered) {
+            console.log('🔑 No auth data found, will need QR scan');
+            setTimeout(() => {
+                if (isConnecting) {
+                    console.log('\n\n⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐');
+                    console.log('🚨 QR CODE SHOULD APPEAR BELOW 🚨');
+                    console.log('If no QR appears, there may be a network issue');
+                    console.log('⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐\n');
+                }
+            }, 5000);
+        }
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
             
             if (qr) {
-                console.log('\n\n' + '⭐'.repeat(20));
-                console.log('📱 QR CODE READY! SCAN NOW!');
-                console.log('1. Open WhatsApp on your phone');
-                console.log('2. Go to Settings > Linked Devices');
-                console.log('3. Tap "Link a Device"');
-                console.log('4. Scan the QR code below:');
-                console.log('\n' + '='.repeat(50));
-                qrcode.generate(qr, { small: true });
-                console.log('='.repeat(50));
-                console.log('⏰ QR expires in 20 seconds - SCAN QUICKLY!');
-                console.log('⭐'.repeat(20) + '\n');
+                displayQR(qr);
             }
             
             if (connection === 'close') {
@@ -300,7 +319,10 @@ async function startBot() {
                     lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
                 
                 const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
+                const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : 'No status';
                 console.log('Connection closed due to:', errorMessage);
+                console.log('Status code:', statusCode);
+                console.log('Error details:', JSON.stringify(lastDisconnect?.error, null, 2));
                 
                 if (connectionAttempts < MAX_RETRIES) {
                     connectionAttempts++;
@@ -318,7 +340,6 @@ async function startBot() {
             } else if (connection === 'open') {
                 isConnecting = false;
                 connectionAttempts = 0;
-                clearTimeout(qrTimeout);
                 console.log('✅ WhatsApp connected successfully!');
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
@@ -326,10 +347,12 @@ async function startBot() {
         });
     } catch (error) {
         isConnecting = false;
-        console.error('Error starting bot:', error);
+        console.error('Error starting bot:', error.message);
+        console.error('Full error:', JSON.stringify(error, null, 2));
         if (connectionAttempts < MAX_RETRIES) {
             connectionAttempts++;
-            setTimeout(() => startBot(), 10000);
+            console.log(`🔄 Retrying after error... (${connectionAttempts}/${MAX_RETRIES})`);
+            setTimeout(() => startBot(), 5000);
         }
     }
 
