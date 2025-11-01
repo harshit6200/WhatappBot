@@ -296,17 +296,21 @@ async function startBot() {
                 
                 // Handle stream conflict specifically
                 if (errorMessage.includes('conflict') || errorMessage.includes('Stream Errored')) {
-                    console.log('⚠️  Stream conflict - likely no QR scan or multiple sessions.');
-                    console.log('💡 Make sure to scan the QR code when it appears!');
+                    console.log('⚠️  STREAM CONFLICT DETECTED!');
+                    console.log('📱 This means you have an existing WhatsApp Web session.');
+                    console.log('🔧 SOLUTION: Go to WhatsApp > Settings > Linked Devices');
+                    console.log('🚪 Log out from ALL existing sessions, then restart this service.');
+                    console.log('💡 After logout, a new QR code will appear for scanning.');
                     
                     if (connectionAttempts < MAX_RETRIES) {
                         connectionAttempts++;
-                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Will show new QR code`);
+                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} in 15 seconds...`);
                         setTimeout(() => {
                             startBot();
-                        }, 10000); // Shorter delay to get new QR faster
+                        }, 15000);
                     } else {
-                        console.log('🛑 Max retries reached. Please restart the service.');
+                        console.log('🛑 Max retries reached.');
+                        console.log('🔄 Please unlink existing WhatsApp sessions and restart the service.');
                     }
                 } else if (shouldReconnect && connectionAttempts < MAX_RETRIES) {
                     connectionAttempts++;
