@@ -230,8 +230,12 @@ async function startBot() {
             auth: state,
             logger: pino({ level: 'silent' }),
             browser: ['Food Bot', 'Chrome', '1.0.0'],
-            printQRInTerminal: true,  // Enable built-in QR
-            qrTimeout: 30000
+            printQRInTerminal: false,  // Use custom QR display
+            qrTimeout: 60000,
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000,
+            keepAliveIntervalMs: 30000,
+            markOnlineOnConnect: true
         });
         
         console.log('✅ Socket created, waiting for events...');
@@ -257,43 +261,60 @@ async function startBot() {
             
             if (connection === 'close') {
                 isConnecting = false;
-                const shouldReconnect = lastDisconnect?.error instanceof Boom ? 
-                    lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-                
+                const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : null;
                 const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
-                const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : 'No status';
+                
                 console.log('Connection closed due to:', errorMessage);
                 console.log('Status code:', statusCode);
                 
-                // Handle 401 Unauthorized - clear auth and force QR
-                if (statusCode === 401) {
-                    console.log('🚨 401 UNAUTHORIZED - Need fresh authentication');
-                    console.log('🧹 Clearing auth data for fresh start...');
+                // Handle specific error codes
+                if (statusCode === 515) { // Stream conflict
+                    console.log('⚠️ Stream conflict - clearing auth and reconnecting');
                     try {
                         if (fs.existsSync('auth_info_baileys')) {
                             fs.rmSync('auth_info_baileys', { recursive: true, force: true });
                         }
-                    } catch (e) {
-                        // Ignore cleanup errors
-                    }
+                    } catch (e) {}
+                } else if (statusCode === 401) { // Unauthorized
+                    console.log('🚨 401 UNAUTHORIZED - clearing auth');
+                    try {
+                        if (fs.existsSync('auth_info_baileys')) {
+                            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                        }
+                    } catch (e) {}
                 }
                 
-                // Always retry with fresh auth after 401
-                if (statusCode === 401 || connectionAttempts < MAX_RETRIES) {
-                    if (statusCode !== 401) connectionAttempts++;
-                    console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Fresh QR code coming`);
-                    setTimeout(() => {
-                        startBot();
-                    }, 3000);
+                // Always reconnect unless logged out
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                if (shouldReconnect) {
+                    if (connectionAttempts < MAX_RETRIES) {
+                        connectionAttempts++;
+                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Reconnecting in 5 seconds...`);
+                        setTimeout(() => startBot(), 5000);
+                    } else {
+                        console.log('🛑 Max retries reached, resetting and trying again...');
+                        connectionAttempts = 0;
+                        setTimeout(() => startBot(), 15000);
+                    }
                 } else {
-                    console.log('🛑 Resetting attempts...');
+                    console.log('🚪 Logged out - need fresh QR scan');
                     connectionAttempts = 0;
-                    setTimeout(() => startBot(), 10000);
+                    setTimeout(() => startBot(), 5000);
                 }
             } else if (connection === 'open') {
                 isConnecting = false;
                 connectionAttempts = 0;
-                console.log('✅ WhatsApp connected successfully!');
+                console.log('✅ WhatsApp connected successfully! Running 24/7');
+                
+                // Keep-alive ping every 30 minutes
+                const keepAlive = setInterval(() => {
+                    if (sock?.ws?.readyState === 1) {
+                        console.log('💓 Keep-alive ping');
+                    } else {
+                        clearInterval(keepAlive);
+                    }
+                }, 30 * 60 * 1000);
+                
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
             }
@@ -502,6 +523,14 @@ const server = http.createServer((req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Health check server running on port ${PORT}`);
+    
+    // Self-ping to keep service alive (every 14 minutes)
+    if (process.env.RENDER_SERVICE_URL) {
+        setInterval(() => {
+            fetch(`${process.env.RENDER_SERVICE_URL}/health`)
+                .catch(() => {}); // Ignore errors
+        }, 14 * 60 * 1000);
+    }
 });
 
 // Start the bot

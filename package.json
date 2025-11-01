@@ -4,9 +4,10 @@
   "description": "A WhatsApp bot for food ordering using Baileys.",
   "main": "bot.mjs",
   "scripts": {
-    "start": "node bot.mjs",
+    "start": "node bot.mjs & node keep-alive.js",
     "dev": "node bot.mjs",
-    "clear-auth": "node clear-auth.js"
+    "clear-auth": "node clear-auth.js",
+    "keep-alive": "node keep-alive.js"
   },
   "engines": {
     "node": ">=18.0.0"
