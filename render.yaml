@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: whatsapp-order-bot
+    name: whatsapp-food-bot
     env: node
     plan: starter
     buildCommand: npm install
@@ -8,7 +8,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: UV_THREADPOOL_SIZE
+        value: 128
     disk:
       name: auth-data
-      mountPath: /app/auth_info_baileys
+      mountPath: /opt/render/project/src/auth_info_baileys
       sizeGB: 1
+    healthCheckPath: /health
+    autoDeploy: false

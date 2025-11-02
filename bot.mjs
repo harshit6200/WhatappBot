@@ -308,14 +308,23 @@ async function startBot() {
                 connectionAttempts = 0;
                 console.log('✅ WhatsApp connected successfully! Running 24/7');
                 
-                // Keep-alive ping every 30 minutes
-                const keepAlive = setInterval(() => {
+                // Multiple keep-alive strategies
+                const keepAlive1 = setInterval(() => {
                     if (sock?.ws?.readyState === 1) {
-                        console.log('💓 Keep-alive ping');
+                        console.log('💓 WhatsApp keep-alive ping');
+                        // Send a ping to WhatsApp to keep connection active
+                        sock.sendPresenceUpdate('available').catch(() => {});
                     } else {
-                        clearInterval(keepAlive);
+                        clearInterval(keepAlive1);
                     }
-                }, 30 * 60 * 1000);
+                }, 15 * 60 * 1000); // 15 minutes
+                
+                // HTTP self-ping
+                const keepAlive2 = setInterval(() => {
+                    const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+                    https.get(`${url}/health`).on('error', () => {});
+                    console.log('🔄 HTTP self-ping');
+                }, 10 * 60 * 1000); // 10 minutes
                 
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
@@ -526,12 +535,24 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Health check server running on port ${PORT}`);
     
-    // Start robust keep-alive service for 24/7 uptime
+    // Multiple keep-alive strategies
     const serviceUrl = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
     if (serviceUrl) {
-        const keepAlive = new KeepAlive(`${serviceUrl}/health`, 12 * 60 * 1000); // 12 minutes
+        // Strategy 1: Dedicated keep-alive class
+        const keepAlive = new KeepAlive(`${serviceUrl}/health`, 8 * 60 * 1000); // 8 minutes
         keepAlive.start();
-        console.log('🔄 24/7 Keep-alive service started');
+        
+        // Strategy 2: Simple interval ping
+        setInterval(() => {
+            https.get(`${serviceUrl}/health`).on('error', () => {});
+        }, 12 * 60 * 1000); // 12 minutes
+        
+        // Strategy 3: Aggressive ping
+        setInterval(() => {
+            https.get(`${serviceUrl}/health`).on('error', () => {});
+        }, 5 * 60 * 1000); // 5 minutes
+        
+        console.log('🔄 Triple keep-alive system started (8min, 12min, 5min)');
     } else {
         console.log('⚠️ No service URL found - keep-alive disabled (local mode)');
     }
