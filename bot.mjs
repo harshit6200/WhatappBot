@@ -3,8 +3,10 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { Boom } from '@hapi/boom';
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import KeepAlive from './keep-alive.js';
 
 // Alternative QR display function
 function displayQR(qrData) {
@@ -522,14 +524,16 @@ const server = http.createServer((req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Health check server running on port ${PORT}`);
+    console.log(`🚀 Health check server running on port ${PORT}`);
     
-    // Self-ping to keep service alive (every 14 minutes)
-    if (process.env.RENDER_SERVICE_URL) {
-        setInterval(() => {
-            fetch(`${process.env.RENDER_SERVICE_URL}/health`)
-                .catch(() => {}); // Ignore errors
-        }, 14 * 60 * 1000);
+    // Start robust keep-alive service for 24/7 uptime
+    const serviceUrl = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
+    if (serviceUrl) {
+        const keepAlive = new KeepAlive(`${serviceUrl}/health`, 12 * 60 * 1000); // 12 minutes
+        keepAlive.start();
+        console.log('🔄 24/7 Keep-alive service started');
+    } else {
+        console.log('⚠️ No service URL found - keep-alive disabled (local mode)');
     }
 });
 

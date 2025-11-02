@@ -1,18 +1,17 @@
 #!/bin/bash
 
-# Start both the bot and keep-alive service
-echo "Starting WhatsApp Bot with 24/7 keep-alive..."
+# Render startup script for WhatsApp Bot
+echo "🚀 Starting WhatsApp Food Ordering Bot..."
 
-# Start the bot in background
-node bot.mjs &
-BOT_PID=$!
+# Set environment variables for better performance
+export NODE_ENV=production
+export UV_THREADPOOL_SIZE=128
 
-# Start keep-alive service in background  
-node keep-alive.js &
-KEEPALIVE_PID=$!
-
-echo "Bot PID: $BOT_PID"
-echo "Keep-alive PID: $KEEPALIVE_PID"
-
-# Wait for both processes
-wait $BOT_PID $KEEPALIVE_PID
+# Start the bot with PM2 for process management (if available)
+if command -v pm2 &> /dev/null; then
+    echo "📦 Using PM2 for process management"
+    pm2 start bot.mjs --name "whatsapp-bot" --no-daemon
+else
+    echo "🔧 Starting with Node.js directly"
+    node bot.mjs
+fi
