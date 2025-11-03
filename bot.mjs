@@ -308,23 +308,20 @@ async function startBot() {
                 connectionAttempts = 0;
                 console.log('✅ WhatsApp connected successfully! Running 24/7');
                 
-                // Multiple keep-alive strategies
-                const keepAlive1 = setInterval(() => {
+                // WhatsApp connection monitor and keep-alive
+                const whatsappKeepAlive = setInterval(() => {
                     if (sock?.ws?.readyState === 1) {
-                        console.log('💓 WhatsApp keep-alive ping');
-                        // Send a ping to WhatsApp to keep connection active
+                        console.log('💓 WhatsApp connection healthy');
+                        // Send presence to keep connection active
                         sock.sendPresenceUpdate('available').catch(() => {});
                     } else {
-                        clearInterval(keepAlive1);
+                        console.log('⚠️ WhatsApp connection lost, reconnecting...');
+                        clearInterval(whatsappKeepAlive);
+                        if (!isConnecting) {
+                            setTimeout(() => startBot(), 3000);
+                        }
                     }
-                }, 15 * 60 * 1000); // 15 minutes
-                
-                // HTTP self-ping
-                const keepAlive2 = setInterval(() => {
-                    const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-                    https.get(`${url}/health`).on('error', () => {});
-                    console.log('🔄 HTTP self-ping');
-                }, 10 * 60 * 1000); // 10 minutes
+                }, 5 * 60 * 1000); // Check every 5 minutes
                 
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
@@ -518,12 +515,21 @@ async function startBot() {
 // Create a simple HTTP server for health checks
 const server = http.createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
+        const isWhatsAppConnected = sock && sock.ws && sock.ws.readyState === 1;
+        
+        // Auto-reconnect if WhatsApp is disconnected but server is running
+        if (!isWhatsAppConnected && !isConnecting) {
+            console.log('🔄 WhatsApp disconnected, auto-reconnecting...');
+            setTimeout(() => startBot(), 2000);
+        }
+        
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
-            status: 'ok', 
-            message: 'WhatsApp Bot is running',
+            status: isWhatsAppConnected ? 'connected' : 'reconnecting',
+            message: isWhatsAppConnected ? 'WhatsApp Bot is running' : 'Reconnecting to WhatsApp',
             timestamp: new Date().toISOString(),
-            connected: sock ? 'yes' : 'no'
+            whatsapp_connected: isWhatsAppConnected,
+            connection_attempts: connectionAttempts
         }));
     } else {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
