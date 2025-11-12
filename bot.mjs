@@ -358,19 +358,36 @@ async function startBot() {
                 session.state = 'selecting_category';
                 const categories = Object.keys(menu);
                 const menuText = categories.map((cat, index) => `${index + 1}. ${EMOJIS.menu} ${cat}`).join('\n');
-                await sock.sendMessage(jid, {
-                    text: `${EMOJIS.welcome} Welcome to *${SHOP_NAME}*, ${senderName}!\n\nPlease reply with the number of the category you'd like to see.\n\n${menuText}\n\nType *'cart'* to view your order.`
-                });
+                const welcomeMsg = `${EMOJIS.welcome} Welcome to *${SHOP_NAME}*, ${senderName}!\n\nPlease reply with the number of the category you'd like to see.\n\n${menuText}\n\nType *'cart'* to view your order or *'clear'* to empty cart.`;
+                await sock.sendMessage(jid, { text: welcomeMsg });
+                console.log(`📤 Sent to ${senderName}: ${welcomeMsg}`);
+            }
+
+            // --- CLEAR CART ---
+            else if (messageContent === 'clear' || messageContent === 'clear cart') {
+                session.cart = [];
+                session.state = 'main_menu';
+                const clearMsg = `${EMOJIS.cancel} Your cart has been cleared. Type *'menu'* to start ordering again.`;
+                await sock.sendMessage(jid, { text: clearMsg });
+                console.log(`📤 Sent to ${senderName}: ${clearMsg}`);
             }
 
             // --- STATE: SELECTING CATEGORY ---
             else if (session.state === 'selecting_category') {
                 if (messageContent === 'cart') {
                     const { cartText } = formatCart(session.cart);
-                    await sock.sendMessage(jid, {
-                        text: `${cartText}\n\nType *'Pay'* to proceed or *'menu'* to continue shopping.`
-                    });
+                    const cartMsg = `${cartText}\n\nType *'Pay'* to proceed, *'clear'* to empty cart, or *'menu'* to continue shopping.`;
+                    await sock.sendMessage(jid, { text: cartMsg });
+                    console.log(`📤 Sent to ${senderName}: ${cartMsg}`);
                     if (session.cart.length > 0) session.state = 'in_cart';
+                    return;
+                }
+
+                if (messageContent === 'clear' || messageContent === 'clear cart') {
+                    session.cart = [];
+                    const clearMsg = `${EMOJIS.cancel} Cart cleared! Type a category number to start ordering.`;
+                    await sock.sendMessage(jid, { text: clearMsg });
+                    console.log(`📤 Sent to ${senderName}: ${clearMsg}`);
                     return;
                 }
 
@@ -382,23 +399,23 @@ async function startBot() {
                     session.context.category = selectedCategory;
                     const items = menu[selectedCategory];
                     const itemsText = items.map((item, index) => `${index + 1}. ${item.name} - ${CURRENCY} ${item.price}`).join('\n');
-                    await sock.sendMessage(jid, {
-                        text: `You selected *${selectedCategory}*.\n\nPlease reply with the item number to add it to your cart.\n\n${itemsText}\n\nType *'back'* to return to categories.`
-                    });
+                    const categoryMsg = `You selected *${selectedCategory}*.\n\nPlease reply with the item number to add it to your cart.\n\n${itemsText}\n\nType *'back'* to return to categories.`;
+                    await sock.sendMessage(jid, { text: categoryMsg });
+                    console.log(`📤 Sent to ${senderName}: ${categoryMsg}`);
                 } else {
-                    await sock.sendMessage(jid, {
-                        text: "Invalid selection. Please reply with a valid category number."
-                    });
+                    const invalidMsg = "Invalid selection. Please reply with a valid category number.";
+                    await sock.sendMessage(jid, { text: invalidMsg });
+                    console.log(`📤 Sent to ${senderName}: ${invalidMsg}`);
                 }
             }
 
             // --- STATE: SELECTING ITEM ---
             else if (session.state === 'selecting_item') {
                 if (messageContent === 'back') {
-                    session.state = 'main_menu'; // Go back to the main menu prompt
-                    await sock.sendMessage(jid, {
-                        text: "Going back..."
-                    });
+                    session.state = 'main_menu';
+                    const backMsg = "Going back...";
+                    await sock.sendMessage(jid, { text: backMsg });
+                    console.log(`📤 Sent to ${senderName}: ${backMsg}`);
                     // Trigger the main menu display again
                     const menuMessage = { conversation: "menu" };
                     msg.message = menuMessage;
@@ -409,18 +426,26 @@ async function startBot() {
                     return;
                 }
 
+                if (messageContent === 'clear' || messageContent === 'clear cart') {
+                    session.cart = [];
+                    const clearMsg = `${EMOJIS.cancel} Cart cleared! Continue selecting items or type *'back'* to return to categories.`;
+                    await sock.sendMessage(jid, { text: clearMsg });
+                    console.log(`📤 Sent to ${senderName}: ${clearMsg}`);
+                    return;
+                }
+
                 const itemIndex = parseInt(messageContent) - 1;
                 const items = menu[session.context.category];
                 if (!isNaN(itemIndex) && itemIndex >= 0 && itemIndex < items.length) {
                     session.state = 'selecting_quantity';
                     session.context.item = items[itemIndex];
-                    await sock.sendMessage(jid, {
-                        text: `How many *${session.context.item.name}* would you like? Please reply with a number (e.g., 1, 2).`
-                    });
+                    const quantityMsg = `How many *${session.context.item.name}* would you like? Please reply with a number (e.g., 1, 2).`;
+                    await sock.sendMessage(jid, { text: quantityMsg });
+                    console.log(`📤 Sent to ${senderName}: ${quantityMsg}`);
                 } else {
-                    await sock.sendMessage(jid, {
-                        text: "Invalid selection. Please reply with a valid item number."
-                    });
+                    const invalidItemMsg = "Invalid selection. Please reply with a valid item number.";
+                    await sock.sendMessage(jid, { text: invalidItemMsg });
+                    console.log(`📤 Sent to ${senderName}: ${invalidItemMsg}`);
                 }
             }
 
@@ -437,30 +462,30 @@ async function startBot() {
                     }
                     session.state = 'in_cart';
                     const { cartText } = formatCart(session.cart);
-                    await sock.sendMessage(jid, {
-                        text: `Added *${quantity}x ${selectedItem.name}* to your cart. ✅\n\n${cartText}\n\nType *'Pay'* to place your order, or *'menu'* to add more items.`
-                    });
+                    const addedMsg = `Added *${quantity}x ${selectedItem.name}* to your cart. ✅\n\n${cartText}\n\nType *'Pay'* to place your order, *'clear'* to empty cart, or *'menu'* to add more items.`;
+                    await sock.sendMessage(jid, { text: addedMsg });
+                    console.log(`📤 Sent to ${senderName}: ${addedMsg}`);
                 } else {
-                    await sock.sendMessage(jid, {
-                        text: "Invalid quantity. Please enter a valid number (like 1, 2, etc.)."
-                    });
+                    const invalidQtyMsg = "Invalid quantity. Please enter a valid number (like 1, 2, etc.).";
+                    await sock.sendMessage(jid, { text: invalidQtyMsg });
+                    console.log(`📤 Sent to ${senderName}: ${invalidQtyMsg}`);
                 }
             }
 
             // --- CHECKOUT & PAYMENT ---
             else if (messageContent === 'pay' || messageContent === 'cart') {
                 if (session.cart.length === 0) {
-                    await sock.sendMessage(jid, {
-                        text: `${EMOJIS.cancel} Your cart is empty. Please type *'menu'* to add items.`
-                    });
+                    const emptyCartMsg = `${EMOJIS.cancel} Your cart is empty. Please type *'menu'* to add items.`;
+                    await sock.sendMessage(jid, { text: emptyCartMsg });
+                    console.log(`📤 Sent to ${senderName}: ${emptyCartMsg}`);
                     session.state = 'main_menu';
                     return;
                 }
                 session.state = 'awaiting_payment_method';
                 const { cartText } = formatCart(session.cart);
-                await sock.sendMessage(jid, {
-                    text: `${EMOJIS.order} *Order Summary*\n\n${cartText}\n\nPlease choose a payment method:\n1. ${EMOJIS.money} Pay with UPI\n2. ${EMOJIS.money} Cash on Delivery (COD)\n\nReply with *1* or *2*.`
-                });
+                const paymentMsg = `${EMOJIS.order} *Order Summary*\n\n${cartText}\n\nPlease choose a payment method:\n1. ${EMOJIS.money} Pay with UPI\n2. ${EMOJIS.money} Cash on Delivery (COD)\n\nReply with *1* or *2*.`;
+                await sock.sendMessage(jid, { text: paymentMsg });
+                console.log(`📤 Sent to ${senderName}: ${paymentMsg}`);
             } else if (session.state === 'awaiting_payment_method') {
                 const choice = messageContent;
                 if (choice === '1') { // UPI
@@ -469,15 +494,16 @@ async function startBot() {
                     const upiLink = `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(SHOP_NAME)}&am=${total}&cu=${CURRENCY}&tn=OrderFrom${senderName}`;
                     const upiMessage = `Please complete your payment of *${CURRENCY} ${total}*.\n\nTo pay, click the link below or copy our UPI ID.\n\n${upiLink}\n\n*Our UPI ID:* \`${UPI_ID}\`\n\nAfter payment, please send a screenshot of the confirmation.`;
                     await sock.sendMessage(jid, { text: upiMessage });
+                    console.log(`📤 Sent to ${senderName}: UPI payment request for ${CURRENCY} ${total}`);
                 } else if (choice === '2') { // COD
                     session.state = 'awaiting_location';
-                    await sock.sendMessage(jid, {
-                        text: `${EMOJIS.location} Great! Please share your live location or drop a pin so we can deliver your order.`
-                    });
+                    const locationMsg = `${EMOJIS.location} Great! Please share your live location or drop a pin so we can deliver your order.`;
+                    await sock.sendMessage(jid, { text: locationMsg });
+                    console.log(`📤 Sent to ${senderName}: ${locationMsg}`);
                 } else {
-                    await sock.sendMessage(jid, {
-                        text: "Invalid choice. Please reply with *1* for UPI or *2* for COD."
-                    });
+                    const invalidPaymentMsg = "Invalid choice. Please reply with *1* for UPI or *2* for COD.";
+                    await sock.sendMessage(jid, { text: invalidPaymentMsg });
+                    console.log(`📤 Sent to ${senderName}: ${invalidPaymentMsg}`);
                 }
             }
 
@@ -488,26 +514,27 @@ async function startBot() {
                 const paymentMethod = session.state === 'awaiting_location' ? 'Cash on Delivery' : 'UPI (Verified)';
                 const confirmationMessage = `*${EMOJIS.confirm} Order Confirmed!*\n\nThank you, ${senderName}!\n\n*Order ID:* ${orderId}\n\n${cartText}\n\n*Payment Method:* ${paymentMethod}\n\nWe will deliver to your shared location shortly.`;
                 await sock.sendMessage(jid, { text: confirmationMessage });
+                console.log(`📤 Sent to ${senderName}: Order confirmation - ${orderId}`);
                 delete userSessions[jid];
             } else if (msg.message.imageMessage && session.state === 'awaiting_payment_proof') {
                 session.state = 'awaiting_location';
-                await sock.sendMessage(jid, {
-                    text: `${EMOJIS.confirm} Thank you for the payment confirmation!\n\n${EMOJIS.location} Now, please share your live location or drop a pin for delivery.`
-                });
+                const paymentConfirmMsg = `${EMOJIS.confirm} Thank you for the payment confirmation!\n\n${EMOJIS.location} Now, please share your live location or drop a pin for delivery.`;
+                await sock.sendMessage(jid, { text: paymentConfirmMsg });
+                console.log(`📤 Sent to ${senderName}: ${paymentConfirmMsg}`);
             }
 
             // --- FALLBACK ---
             else {
-                await sock.sendMessage(jid, {
-                    text: `I'm sorry, I didn't understand. Type *'menu'* to see the options.`
-                });
+                const fallbackMsg = `I'm sorry, I didn't understand. Type *'menu'* to see options or *'clear'* to empty your cart.`;
+                await sock.sendMessage(jid, { text: fallbackMsg });
+                console.log(`📤 Sent to ${senderName}: ${fallbackMsg}`);
             }
 
         } catch (error) {
             console.error("Error processing message: ", error);
-            await sock.sendMessage(jid, {
-                text: `${EMOJIS.cancel} Oops! Something went wrong. Please try again later.`
-            });
+            const errorMsg = `${EMOJIS.cancel} Oops! Something went wrong. Please try again later.`;
+            await sock.sendMessage(jid, { text: errorMsg });
+            console.log(`📤 Sent to ${senderName}: ${errorMsg}`);
         }
     });
 }
