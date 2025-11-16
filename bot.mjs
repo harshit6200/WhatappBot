@@ -251,12 +251,16 @@ async function startBot() {
             console.log('2. Go to Settings > Linked Devices');
             console.log('3. Tap "Link a Device"');
             console.log('4. Scan the QR code when it appears below');
+        } else {
+            console.log('🔐 Found existing auth data - attempting to reconnect...');
         }
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
+            console.log('📡 Connection update:', { connection, qr: qr ? 'QR_RECEIVED' : 'NO_QR' });
             
             if (qr) {
+                console.log('📱 QR Code generated - scan with WhatsApp!');
                 displayQR(qr);
             }
             
@@ -305,7 +309,9 @@ async function startBot() {
             } else if (connection === 'open') {
                 isConnecting = false;
                 connectionAttempts = 0;
-                console.log('✅ WhatsApp connected successfully! Running 24/7');
+                console.log('✅ WhatsApp connected successfully! Bot is now LIVE and ready for orders!');
+                console.log('📞 Phone number:', sock.user?.id || 'Unknown');
+                console.log('👤 Display name:', sock.user?.name || 'Unknown');
                 
                 // WhatsApp connection monitor and keep-alive
                 const whatsappKeepAlive = setInterval(() => {
@@ -324,6 +330,8 @@ async function startBot() {
                 
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
+            } else if (connection === 'opening') {
+                console.log('🚪 Opening connection...');
             }
         });
     } catch (error) {
@@ -343,13 +351,16 @@ async function startBot() {
 
         const jid = msg.key.remoteJid;
         const senderName = msg.pushName || "User";
+        const messageContent = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
+        
+        console.log(`📨 Received from ${senderName} (${jid}): "${messageContent}"`);
 
         // Initialize user session if not present
         if (!userSessions[jid]) {
             userSessions[jid] = { state: 'main_menu', cart: [], context: {} };
+            console.log(`👤 New user session created for ${senderName}`);
         }
         const session = userSessions[jid];
-        const messageContent = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
 
         try {
             // --- MAIN MENU / START ---
@@ -530,7 +541,7 @@ async function startBot() {
             }
 
         } catch (error) {
-            console.error("Error processing message: ", error);
+            console.error(`❌ Error processing message from ${senderName}:`, error);
             const errorMsg = `${EMOJIS.cancel} Oops! Something went wrong. Please try again later.`;
             await sock.sendMessage(jid, { text: errorMsg });
             console.log(`📤 Sent to ${senderName}: ${errorMsg}`);
