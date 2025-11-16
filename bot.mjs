@@ -6,7 +6,6 @@ import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
-import KeepAlive from './keep-alive.js';
 
 // Alternative QR display function
 function displayQR(qrData) {
@@ -568,24 +567,21 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Health check server running on port ${PORT}`);
     
-    // Multiple keep-alive strategies
+    // Keep-alive system for 24/7 uptime
     const serviceUrl = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
     if (serviceUrl) {
-        // Strategy 1: Dedicated keep-alive class
-        const keepAlive = new KeepAlive(`${serviceUrl}/health`, 8 * 60 * 1000); // 8 minutes
-        keepAlive.start();
-        
-        // Strategy 2: Simple interval ping
+        // Primary keep-alive ping every 10 minutes
         setInterval(() => {
             https.get(`${serviceUrl}/health`).on('error', () => {});
-        }, 12 * 60 * 1000); // 12 minutes
+            console.log('🔄 Keep-alive ping sent');
+        }, 10 * 60 * 1000);
         
-        // Strategy 3: Aggressive ping
+        // Secondary keep-alive ping every 5 minutes
         setInterval(() => {
             https.get(`${serviceUrl}/health`).on('error', () => {});
-        }, 5 * 60 * 1000); // 5 minutes
+        }, 5 * 60 * 1000);
         
-        console.log('🔄 Triple keep-alive system started (8min, 12min, 5min)');
+        console.log('🔄 Keep-alive system started (5min & 10min intervals)');
     } else {
         console.log('⚠️ No service URL found - keep-alive disabled (local mode)');
     }
