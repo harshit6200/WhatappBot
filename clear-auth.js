@@ -3,22 +3,19 @@
 import fs from 'fs';
 import path from 'path';
 
-const authDir = 'auth_info_baileys';
-const lockFile = 'bot.lock';
+const authDir = path.join(process.cwd(), 'auth_info_baileys');
 
 console.log('🧹 Clearing WhatsApp authentication data...');
 
-// Remove lock file
-if (fs.existsSync(lockFile)) {
-    fs.unlinkSync(lockFile);
-    console.log('✅ Removed lock file');
+try {
+    if (fs.existsSync(authDir)) {
+        fs.rmSync(authDir, { recursive: true, force: true });
+        console.log('✅ Authentication data cleared successfully!');
+        console.log('📱 You can now restart the bot and scan a fresh QR code.');
+    } else {
+        console.log('ℹ️ No authentication data found to clear.');
+    }
+} catch (error) {
+    console.error('❌ Error clearing auth data:', error.message);
+    process.exit(1);
 }
-
-// Remove auth directory
-if (fs.existsSync(authDir)) {
-    fs.rmSync(authDir, { recursive: true, force: true });
-    console.log('✅ Removed auth directory');
-}
-
-console.log('🎉 Authentication data cleared!');
-console.log('💡 You can now run the bot and scan a new QR code.');

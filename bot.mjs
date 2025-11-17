@@ -46,13 +46,13 @@ const EMOJIS = {
 // --- MENU DATA ---
 const menu = {
     "Pizza": [
-        { name: "Cheese Pizza", price: 149 },
-        { name: "Veg Cheese Pizza", price: 149 },
+        { name: "Cheese Pizza", price: 159 },
+        { name: "Veg Cheese Pizza", price: 169 },
         { name: "Tandoori Paneer Pizza", price: 210 },
         { name: "Cheese Corn Pizza", price: 199 },
         { name: "Paneer Corn Pizza", price: 230 },
         { name: "Margherita Pizza", price: 149 },
-        { name: "Green Capsicum Pizza", price: 139 },
+        { name: "Green Capsicum Pizza", price: 149 },
         { name: "Onion Pizza", price: 149 },
         { name: "Paneer Capsicum Onion Pizza", price: 279 },
         { name: "Paneer Capsicum Pizza", price: 279 },
@@ -71,10 +71,10 @@ const menu = {
         { name: "Veg Makhani Burger", price: 142 },
         { name: "Mexican Marvel Burger", price: 188 },
         { name: "Mighty Cheese Burger", price: 227 },
-        { name: "Veg Rockstar Burger", price: 99 },
+        { name: "Veg Rockstar Burger", price: 109 },
         { name: "Korean King", price: 178 },
-        { name: "Paneer Tikka Burger", price: 99 },
-        { name: "Crunchy Paneer Burger", price: 119 },
+        { name: "Paneer Tikka Burger", price: 119 },
+        { name: "Crunchy Paneer Burger", price: 129 },
         { name: "Aloo Tikki Burger", price: 99 },
         { name: "Hot Veggie Crunch Burger", price: 99 },
         { name: "Veggie Lover Burger", price: 119 },
@@ -120,12 +120,12 @@ const menu = {
         { name: "Corn Cheese Maggi", price: 129 },
         { name: "Veg Cheese Maggi", price: 129 },
         { name: "Plain Maggi", price: 79 },
-        { name: "Peri Peri Maggi", price: 90 },
+        { name: "Peri Peri Maggi", price: 99 },
         { name: "Corn Matar Maggi", price: 129 },
         { name: "Paneer Maggi", price: 119 },
         { name: "Schezwan Cheese Maggi", price: 139 },
-        { name: "Egg Maggi", price: 90 },
-        { name: "Egg Cheese Maggi", price: 100 },
+        { name: "Egg Maggi", price: 99 },
+        { name: "Egg Cheese Maggi", price: 109 },
         { name: "Amul Butter Maggi", price: 119 },
         { name: "Peri Peri Masala Maggi", price: 129 },
         { name: "Veg Peri Peri Maggi", price: 129 },
@@ -231,12 +231,14 @@ async function startBot() {
             auth: state,
             logger: pino({ level: 'silent' }),
             browser: ['Food Bot', 'Chrome', '1.0.0'],
-            printQRInTerminal: false,  // Use custom QR display
-            qrTimeout: 60000,
-            connectTimeoutMs: 60000,
-            defaultQueryTimeoutMs: 60000,
-            keepAliveIntervalMs: 30000,
-            markOnlineOnConnect: true
+            printQRInTerminal: false,
+            qrTimeout: 40000,
+            connectTimeoutMs: 30000,
+            defaultQueryTimeoutMs: 30000,
+            keepAliveIntervalMs: 10000,
+            markOnlineOnConnect: false,
+            syncFullHistory: false,
+            generateHighQualityLinkPreview: false
         });
         
         console.log('✅ Socket created, waiting for events...');
@@ -273,38 +275,48 @@ async function startBot() {
                 console.log('Status code:', statusCode);
                 
                 // Handle specific error codes
-                if (statusCode === 515) { // Stream conflict
-                    console.log('⚠️ Stream conflict - clearing auth and reconnecting');
+                if (statusCode === DisconnectReason.badSession || statusCode === 401) {
+                    console.log('🚨 Bad session - clearing auth');
                     try {
                         if (fs.existsSync('auth_info_baileys')) {
                             fs.rmSync('auth_info_baileys', { recursive: true, force: true });
                         }
                     } catch (e) {}
-                } else if (statusCode === 401) { // Unauthorized
-                    console.log('🚨 401 UNAUTHORIZED - clearing auth');
-                    try {
-                        if (fs.existsSync('auth_info_baileys')) {
-                            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
-                        }
-                    } catch (e) {}
+                } else if (statusCode === DisconnectReason.connectionClosed) {
+                    console.log('🔌 Connection closed normally');
+                } else if (statusCode === DisconnectReason.connectionLost) {
+                    console.log('📡 Connection lost');
+                } else if (statusCode === DisconnectReason.restartRequired) {
+                    console.log('🔄 Restart required');
                 }
                 
-                // Always reconnect unless logged out
+                // Reconnect logic
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 if (shouldReconnect) {
                     if (connectionAttempts < MAX_RETRIES) {
                         connectionAttempts++;
-                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Reconnecting in 5 seconds...`);
-                        setTimeout(() => startBot(), 5000);
+                        const delay = Math.min(connectionAttempts * 2000, 10000); // Progressive delay
+                        console.log(`🔄 Retry ${connectionAttempts}/${MAX_RETRIES} - Reconnecting in ${delay/1000}s...`);
+                        setTimeout(() => startBot(), delay);
                     } else {
-                        console.log('🛑 Max retries reached, resetting and trying again...');
+                        console.log('🛑 Max retries reached, clearing auth and restarting...');
                         connectionAttempts = 0;
-                        setTimeout(() => startBot(), 15000);
+                        try {
+                            if (fs.existsSync('auth_info_baileys')) {
+                                fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                            }
+                        } catch (e) {}
+                        setTimeout(() => startBot(), 10000);
                     }
                 } else {
-                    console.log('🚪 Logged out - need fresh QR scan');
+                    console.log('🚪 Logged out - clearing auth for fresh start');
                     connectionAttempts = 0;
-                    setTimeout(() => startBot(), 5000);
+                    try {
+                        if (fs.existsSync('auth_info_baileys')) {
+                            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                        }
+                    } catch (e) {}
+                    setTimeout(() => startBot(), 3000);
                 }
             } else if (connection === 'open') {
                 isConnecting = false;
@@ -313,20 +325,12 @@ async function startBot() {
                 console.log('📞 Phone number:', sock.user?.id || 'Unknown');
                 console.log('👤 Display name:', sock.user?.name || 'Unknown');
                 
-                // WhatsApp connection monitor and keep-alive
-                const whatsappKeepAlive = setInterval(() => {
-                    if (sock?.ws?.readyState === 1) {
-                        console.log('💓 WhatsApp connection healthy');
-                        // Send presence to keep connection active
-                        sock.sendPresenceUpdate('available').catch(() => {});
-                    } else {
-                        console.log('⚠️ WhatsApp connection lost, reconnecting...');
-                        clearInterval(whatsappKeepAlive);
-                        if (!isConnecting) {
-                            setTimeout(() => startBot(), 3000);
-                        }
-                    }
-                }, 5 * 60 * 1000); // Check every 5 minutes
+                // Simple presence update
+                try {
+                    await sock.sendPresenceUpdate('available');
+                } catch (e) {
+                    console.log('Presence update failed:', e.message);
+                }
                 
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
@@ -554,16 +558,10 @@ const server = http.createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
         const isWhatsAppConnected = sock && sock.ws && sock.ws.readyState === 1;
         
-        // Auto-reconnect if WhatsApp is disconnected but server is running
-        if (!isWhatsAppConnected && !isConnecting) {
-            console.log('🔄 WhatsApp disconnected, auto-reconnecting...');
-            setTimeout(() => startBot(), 2000);
-        }
-        
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
-            status: isWhatsAppConnected ? 'connected' : 'reconnecting',
-            message: isWhatsAppConnected ? 'WhatsApp Bot is running' : 'Reconnecting to WhatsApp',
+            status: 'running',
+            message: 'WhatsApp Bot Server is running',
             timestamp: new Date().toISOString(),
             whatsapp_connected: isWhatsAppConnected,
             connection_attempts: connectionAttempts
@@ -578,23 +576,14 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Health check server running on port ${PORT}`);
     
-    // Keep-alive system for 24/7 uptime
+    // Simple keep-alive system
     const serviceUrl = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
     if (serviceUrl) {
-        // Primary keep-alive ping every 10 minutes
         setInterval(() => {
             https.get(`${serviceUrl}/health`).on('error', () => {});
-            console.log('🔄 Keep-alive ping sent');
-        }, 10 * 60 * 1000);
+        }, 14 * 60 * 1000); // Every 14 minutes to prevent sleep
         
-        // Secondary keep-alive ping every 5 minutes
-        setInterval(() => {
-            https.get(`${serviceUrl}/health`).on('error', () => {});
-        }, 5 * 60 * 1000);
-        
-        console.log('🔄 Keep-alive system started (5min & 10min intervals)');
-    } else {
-        console.log('⚠️ No service URL found - keep-alive disabled (local mode)');
+        console.log('🔄 Keep-alive system started (14min intervals)');
     }
 });
 
